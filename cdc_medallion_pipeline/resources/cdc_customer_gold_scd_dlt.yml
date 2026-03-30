@@ -25,7 +25,7 @@ resources:
 
       libraries:
         - notebook:
-            path: /Repos/Medallion_Assesment/cdc_medallion_pipeline/src/gold/gold_scd_merge
+            path: /Repos/sachinkumarbhandari4/Medallion_Assesment/cdc_medallion_pipeline/src/gold/gold_scd_merge
 
       target: gold
       catalog: ${bundle.variables.catalog}
