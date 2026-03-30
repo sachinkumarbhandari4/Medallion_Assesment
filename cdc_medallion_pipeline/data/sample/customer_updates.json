@@ -1,1 +1,5 @@
-
+{"customer_id":"C101","name":"Rahul Sharma","email":"rahul@gmail.com","city":"Delhi","status":"ACTIVE","operation":"INSERT","update_ts":"2026-03-01T09:00:00"}
+{"customer_id":"C102","name":"Priya Singh","email":"priya@gmail.com","city":"Mumbai","status":"ACTIVE","operation":"INSERT","update_ts":"2026-03-01T09:05:00"}
+{"customer_id":"C101","name":"Rahul Sharma","email":"rahul@gmail.com","city":"Bangalore","status":"ACTIVE","operation":"UPDATE","update_ts":"2026-03-02T10:00:00"}
+{"customer_id":"C102","name":"Priya Singh","email":"priya_new@gmail.com","city":"Mumbai","status":"ACTIVE","operation":"UPDATE","update_ts":"2026-03-02T10:30:00"}
+{"customer_id":"C101","name":"Rahul Sharma","email":"rahul@gmail.com","city":"Bangalore","status":"INACTIVE","operation":"UPDATE","update_ts":"2026-03-03T12:00:00"}
