@@ -31,7 +31,7 @@ resources:
             pipeline_id: ${resources.pipelines.pipeline_cdc_customer_silver.id}
             full_refresh: false
 
-        - task_key: gold_scd2_merge
+        - task_key: gold_scd_merge
           description: "Apply SCD Type 2 merge into Customer Dimension"
           depends_on:
             - task_key: silver_transformation
