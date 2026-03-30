@@ -23,7 +23,7 @@ resources:
 
       libraries:
         - notebook:
-            path: /Repos/Medallion_Assesment/cdc_medallion_pipeline/src/bronze_ingestion
+            path: /Repos/Medallion_Assesment/cdc_medallion_pipeline/src/bronze/bronze_ingestion
 
       # Write into the bronze schema of the target catalog
       target: bronze
