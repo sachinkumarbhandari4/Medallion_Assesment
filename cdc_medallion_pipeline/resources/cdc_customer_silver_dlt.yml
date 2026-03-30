@@ -1,0 +1,34 @@
+resources:
+  pipelines:
+    pipeline_cdc_customer_silver:
+      name: "cdc_customer_silver_dlt"
+
+      configuration:
+        # Runtime parameters
+        pipeline_name:      "cdc_customer_silver_dlt"
+        bronze_catalog:     ${bundle.variables.catalog}
+        bronze_schema:      bronze
+        silver_catalog:     ${bundle.variables.catalog}
+        silver_schema:      silver
+        checkpoint_path:    "/mnt/checkpoints/silver/customer_cdc/"
+        silver_table_path:  "/mnt/delta/silver/customer_cdc_clean"
+
+      clusters:
+        - label: default
+          node_type_id: Standard_DS4_v2
+          driver_node_type_id: Standard_DS4_v2
+          autoscale:
+            min_workers: 1
+            max_workers: 4
+            mode: ENHANCED
+
+      libraries:
+        - notebook:
+            path: /Repos/cdc_medallion_pipeline/silver/silver_transformation
+
+      target: silver
+      catalog: ${bundle.variables.catalog}
+      data_sampling: false
+
+      # Triggered mode: process available data then stop (matches availableNow trigger)
+      continuous: false
