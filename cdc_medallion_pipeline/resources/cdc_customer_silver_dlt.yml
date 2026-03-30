@@ -24,7 +24,7 @@ resources:
 
       libraries:
         - notebook:
-            path: /Repos/Medallion_Assesment/cdc_medallion_pipeline/src/silver_transformation
+            path: /Repos/Medallion_Assesment/cdc_medallion_pipeline/src/silver/silver_transformation
 
       target: silver
       catalog: ${bundle.variables.catalog}
