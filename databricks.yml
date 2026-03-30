@@ -1,0 +1,150 @@
+bundle:
+  name: cdc_medallion_pipeline
+
+variables:
+  catalog:
+    description: "Unity Catalog name - overridden per target (dev / staging / prod)"
+    default: dev
+
+workspace:
+  host: ${workspace.host}
+
+#--------------------------------------------------------------------------------
+# Resources – all three DLT pipelines + orchestration job defined inline
+#--------------------------------------------------------------------------------
+resources:
+
+  # 1. Bronze: Raw CDC ingestion via Auto Loader
+  pipelines:
+    pipeline_cdc_customer_bronze:
+      name: "cdc_customer_bronze_dlt"
+      configuration:
+        pipeline_name:     "cdc_customer_bronze_dlt"
+        raw_source_path:   "/mnt/raw/customer_updates/"
+        checkpoint_path:   "/mnt/checkpoints/bronze/customer_cdc/"
+        schema_hints_path: "/mnt/schema_hints/customer_cdc/"
+        bronze_catalog:    ${bundle.variables.catalog}
+        bronze_schema:     bronze
+      clusters:
+        - label: default
+          node_type_id: Standard_DS4_v2
+          driver_node_type_id: Standard_DS4_v2
+          autoscale:
+            min_workers: 1
+            max_workers: 3
+            mode: ENHANCED
+      libraries:
+        - notebook:
+            path: /Repos/cdc_medallion_pipeline/bronze/bronze_ingestion
+      target: bronze
+      catalog: ${bundle.variables.catalog}
+      data_sampling: false
+      continuous: true
+
+    # 2. Silver: Cleansing, dedup, validation
+    pipeline_cdc_customer_silver:
+      name: "cdc_customer_silver_dlt"
+      configuration:
+        pipeline_name:     "cdc_customer_silver_dlt"
+        bronze_catalog:    ${bundle.variables.catalog}
+        bronze_schema:     bronze
+        silver_catalog:    ${bundle.variables.catalog}
+        silver_schema:     silver
+        checkpoint_path:   "/mnt/checkpoints/silver/customer_cdc/"
+        silver_table_path: "/mnt/delta/silver/customer_cdc_clean"
+      clusters:
+        - label: default
+          node_type_id: Standard_DS4_v2
+          driver_node_type_id: Standard_DS4_v2
+          autoscale:
+            min_workers: 1
+            max_workers: 4
+            mode: ENHANCED
+      libraries:
+        - notebook:
+            path: /Repos/cdc_medallion_pipeline/silver/silver_transformation
+      target: silver
+      catalog: ${bundle.variables.catalog}
+      data_sampling: false
+      continuous: false
+
+    # 3. Gold: SCD Type 2 Customer Dimension
+    pipeline_cdc_customer_gold:
+      name: "cdc_customer_gold_scd2_dlt"
+      configuration:
+        pipeline_name:    "cdc_customer_gold_scd2_dlt"
+        silver_catalog:   ${bundle.variables.catalog}
+        silver_schema:    silver
+        gold_catalog:     ${bundle.variables.catalog}
+        gold_schema:      gold
+        gold_prefix:      gold_
+        gold_table_path:  "/mnt/delta/gold/dim_customer"
+        checkpoint_path:  "/mnt/checkpoints/gold/dim_customer/"
+      clusters:
+        - label: default
+          node_type_id: Standard_DS14_v2
+          driver_node_type_id: Standard_L8s_v3
+          autoscale:
+            min_workers: 1
+            max_workers: 5
+            mode: ENHANCED
+      libraries:
+        - notebook:
+            path: /Repos/cdc_medallion_pipeline/gold/gold_scd2_merge
+      target: gold
+      catalog: ${bundle.variables.catalog}
+      data_sampling: false
+      continuous: false
+
+  # 4. Orchestration job: Bronze - Silver - Gold in sequence 
+  jobs:
+    job_cdc_medallion_pipeline:
+      name: "cdc_medallion_pipeline_orchestrator"
+      schedule:
+        quartz_cron_expression: "0 0 * * * ?"
+        timezone_id: "UTC"
+        pause_status: UNPAUSED
+      email_notifications:
+        on_failure:
+          - ${workspace.current_user.userName}
+      tasks:
+        - task_key: bronze_ingestion
+          description: "Auto Loader – ingest raw CDC JSON into Bronze Delta"
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.pipeline_cdc_customer_bronze.id}
+            full_refresh: false
+
+        - task_key: silver_transformation
+          description: "Cleanse, deduplicate and validate CDC events"
+          depends_on:
+            - task_key: bronze_ingestion
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.pipeline_cdc_customer_silver.id}
+            full_refresh: false
+
+        - task_key: gold_scd2_merge
+          description: "SCD Type 2 merge into Customer Dimension table"
+          depends_on:
+            - task_key: silver_transformation
+          pipeline_task:
+            pipeline_id: ${resources.pipelines.pipeline_cdc_customer_gold.id}
+            full_refresh: false
+
+#--------------------------------------------------------------------------------
+# Targets – catalog variable drives all catalog/schema references above
+#--------------------------------------------------------------------------------
+targets:
+  dev:
+    mode: development
+    default: true
+    variables:
+      catalog: dev
+
+  test:
+    variables:
+      catalog: test
+
+  prod:
+    mode: production
+    variables:
+      catalog: prod
