@@ -1,0 +1,34 @@
+resources:
+  pipelines:
+    pipeline_cdc_customer_gold:
+      name: "cdc_customer_gold_scd2_dlt"
+
+      configuration:
+        # Runtime parameters 
+        pipeline_name:     "cdc_customer_gold_scd2_dlt"
+        silver_catalog:    ${bundle.variables.catalog}
+        silver_schema:     silver
+        gold_catalog:      ${bundle.variables.catalog}
+        gold_schema:       gold
+        gold_prefix:       gold_
+        gold_table_path:   "/mnt/delta/gold/dim_customer"
+        checkpoint_path:   "/mnt/checkpoints/gold/dim_customer/"
+
+      clusters:
+        - label: default
+          node_type_id: Standard_DS14_v2
+          driver_node_type_id: Standard_L8s_v3
+          autoscale:
+            min_workers: 1
+            max_workers: 5
+            mode: ENHANCED
+
+      libraries:
+        - notebook:
+            path: /Repos/cdc_medallion_pipeline/src/gold_scd_merge
+
+      target: gold
+      catalog: ${bundle.variables.catalog}
+      data_sampling: false
+
+      continuous: false
