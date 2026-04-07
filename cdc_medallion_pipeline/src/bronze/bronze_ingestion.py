@@ -45,8 +45,12 @@ CUSTOMER_CDC_SCHEMA = StructType([
 
 def create_bronze_database() -> None:
     """Ensure the Bronze database/schema exists."""
-    spark.sql(f"CREATE DATABASE IF NOT EXISTS {BRONZE_DATABASE}")
-    logger.info("Bronze database ready: %s", BRONZE_DATABASE)
+    try:  # exception handling: catch errors during database creation
+        spark.sql(f"CREATE DATABASE IF NOT EXISTS {BRONZE_DATABASE}")
+        logger.info("Bronze database ready: %s", BRONZE_DATABASE)
+    except Exception as e:  # exception handling: log and re-raise so caller is aware
+        logger.error("Failed to create Bronze database '%s': %s", BRONZE_DATABASE, e)
+        raise
 
 
 def read_stream_auto_loader():
@@ -61,27 +65,35 @@ def read_stream_auto_loader():
     """
     logger.info("Configuring Auto Loader stream from: %s", RAW_SOURCE_PATH)
 
-    return (
-        spark.readStream
-        .format("cloudFiles")
-        .option("cloudFiles.format", "json")
-        .option("cloudFiles.schemaLocation", SCHEMA_HINTS_PATH)
-        .option("cloudFiles.inferColumnTypes", "true")
-        .option("mergeSchema", "true")
-        .schema(CUSTOMER_CDC_SCHEMA) # Providing a hint schema so Auto Loader starts immediately on first run without scanning all files to infer types.
-        .load(RAW_SOURCE_PATH)
-    )
+    try:
+        return (
+            spark.readStream
+            .format("cloudFiles")
+            .option("cloudFiles.format", "json")
+            .option("cloudFiles.schemaLocation", SCHEMA_HINTS_PATH)
+            .option("cloudFiles.inferColumnTypes", "true")
+            .option("mergeSchema", "true")
+            .schema(CUSTOMER_CDC_SCHEMA) # Providing a hint schema so Auto Loader starts immediately on first run without scanning all files to infer types.
+            .load(RAW_SOURCE_PATH)
+        )
+    except Exception as e:
+        logger.error("Failed to configure Auto Loader stream from '%s': %s", RAW_SOURCE_PATH, e)
+        raise
 
 
 def add_audit_columns(df):
     """
     Every raw record with pipeline audit metadata.
     """
-    return df.withColumn(
-        "bronze_ingestion_ts", F.current_timestamp()
-    ).withColumn(
-        "source_file_name", F.input_file_name()
-    )
+    try:
+        return df.withColumn(
+            "bronze_ingestion_ts", F.current_timestamp()
+        ).withColumn(
+            "source_file_name", F.input_file_name()
+        )
+    except Exception as e:
+        logger.error("Failed to add audit columns: %s", e)
+        raise
 
 
 def write_stream_to_bronze(stream_df):
@@ -94,27 +106,41 @@ def write_stream_to_bronze(stream_df):
     """
     logger.info("Starting write stream to Bronze table: %s.%s", BRONZE_DATABASE, BRONZE_TABLE_NAME)
 
-    return (
-        stream_df.writeStream
-        .format("delta")
-        .outputMode("append")
-        .option("checkpointLocation", CHECKPOINT_PATH)
-        .option("mergeSchema", "true")
-        .partitionBy("operation")
-        .toTable(f"{BRONZE_DATABASE}.{BRONZE_TABLE_NAME}")
-    )
+    try:
+        return (
+            stream_df.writeStream
+            .format("delta")
+            .outputMode("append")
+            .option("checkpointLocation", CHECKPOINT_PATH)
+            .option("mergeSchema", "true")
+            .partitionBy("operation")
+            .toTable(f"{BRONZE_DATABASE}.{BRONZE_TABLE_NAME}")
+        )
+    except Exception as e:
+        logger.error(
+            "Failed to start write stream to '%s.%s' with checkpoint '%s': %s",
+            BRONZE_DATABASE, BRONZE_TABLE_NAME, CHECKPOINT_PATH, e
+        )
+        raise
 
 
 def register_table() -> None:
     """
     Register the Bronze Delta table in the metastore so it is queryable via SQL.
     """
-    spark.sql(f"""
-        CREATE TABLE IF NOT EXISTS {BRONZE_DATABASE}.{BRONZE_TABLE_NAME}
-        USING DELTA
-        LOCATION '{BRONZE_TABLE_PATH}'
-    """)
-    logger.info("Bronze table registered: %s.%s", BRONZE_DATABASE, BRONZE_TABLE_NAME)
+    try:
+        spark.sql(f"""
+            CREATE TABLE IF NOT EXISTS {BRONZE_DATABASE}.{BRONZE_TABLE_NAME}
+            USING DELTA
+            LOCATION '{BRONZE_TABLE_PATH}'
+        """)
+        logger.info("Bronze table registered: %s.%s", BRONZE_DATABASE, BRONZE_TABLE_NAME)
+    except Exception as e:
+        logger.error(
+            "Failed to register Bronze table '%s.%s' at '%s': %s",
+            BRONZE_DATABASE, BRONZE_TABLE_NAME, BRONZE_TABLE_PATH, e
+        )
+        raise
 
 
 def run_bronze_pipeline(await_termination: bool = True) -> None:
@@ -127,17 +153,22 @@ def run_bronze_pipeline(await_termination: bool = True) -> None:
         Set True for production (blocks until stream stops).
         Set False for notebook interactive mode.
     """
-    create_bronze_database()
-    register_table()
+    try:
+        create_bronze_database()
+        register_table()
 
-    raw_stream = read_stream_auto_loader()
-    enriched   = add_audit_columns(raw_stream)
-    query      = write_stream_to_bronze(enriched)
+        raw_stream = read_stream_auto_loader()
+        enriched   = add_audit_columns(raw_stream)
+        query      = write_stream_to_bronze(enriched)
 
-    logger.info("Bronze pipeline running. Awaiting termination: %s", await_termination)
+        logger.info("Bronze pipeline running. Awaiting termination: %s", await_termination)
 
-    if await_termination:
-        query.awaitTermination()
+        if await_termination:
+            query.awaitTermination()
+
+    except Exception as e:
+        logger.error("Bronze pipeline terminated with an unexpected error: %s", e)
+        raise
 
 
 # ---------------------------------------------------------------------------
